@@ -1,0 +1,1228 @@
+---
+title: "11.21.20_Case_Study_2"
+author: "Zach Zaiken"
+date: "11/21/2020"
+output: html_document
+---
+
+```{r global_options}
+knitr::opts_chunk$set(fig.path='Figs/')
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction
+
+The analysis and code are based off of the  employee information provided by Frito/Lay. The findings from the DDS Analytics Company, were prepared and are represented by data scientist Zach Zaiken.  In the Code and presentation attached , DDS Analytics will be providing data inferences and key takeaways for each of the Frito/Lay Team's questions and inquries. The presentation is divided up into the sections below.
+
+1. Import Data
+2. Factors Of Attrition
+  a) JobRole
+  b) Monthly Income
+  c) Over Time
+3. Attrition Classification via Naive-Bayes
+4. Prediction of Attrition
+5. Job Specific Trends
+6. Monthly Income Regression Model
+7. Monthly Income Regression Model (Cross-Validation)
+8. Monthly Income Regression Model (Prediction)
+9. Export of CompSet CSV files
+
+# Import Data
+
+The following code imports the primary employee dataset that will be used to identify attrition classification/prediction, Jobe Role specific trends and Monthly Income regression analysis.  In addition the Compsets are brought in for Attrition and Salaries which we be used to test the cross validared prediction models for attrition and monthly income.
+
+```{r message=FALSE, warning=FALSE}
+library (readr)
+
+casestudy2data_urlfile="https://raw.githubusercontent.com/zz415/SMU_DDS_6306_CaseStudy2/main/raw_data_csv/CaseStudy2-data.csv"
+casestudy2CompSet_NoAtr_urlfile="https://raw.githubusercontent.com/zz415/SMU_DDS_6306_CaseStudy2/main/raw_data_csv/CaseStudy2CompSet%20No%20Attrition.csv"
+casestudy2CompSet_NoSal_urlfile="https://raw.githubusercontent.com/zz415/SMU_DDS_6306_CaseStudy2/main/raw_data_csv/CaseStudy2CompSet%20No%20Salary.csv"
+
+
+
+CaseStudy2_data <-read_csv(url(casestudy2data_urlfile))
+CaseStudy2_CompSet_NoAtr <-read_csv(url(casestudy2CompSet_NoAtr_urlfile))
+CaseStudy2_CompSet_NoSal <-read_csv(url(casestudy2CompSet_NoSal_urlfile))
+
+```
+
+
+# Factors Of Attrition
+
+The overall employee attrition of the data set is 16%.  The following sections and code will review the 3 primary factors driving attrition.  The code below summarizes Total attrition of the sample set.
+
+```{r message=FALSE, warning=FALSE}
+library(kableExtra)
+library(knitr)
+library(tidyverse)
+
+data.frame(
+ Total_Employee_Count = nrow(CaseStudy2_data),
+ Attrition_Count = nrow(CaseStudy2_data%>%filter(Attrition=="Yes")),
+ Attrition_Percent = nrow(CaseStudy2_data%>%filter(Attrition=="Yes"))/nrow(CaseStudy2_data)) %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Overall Employee Attrition" = 3))
+
+ 
+```
+
+### JobRole
+The code below summarizes attrition related statistics by JobRole from the sample set  The code creates dataframes that show the attrition percentage, and cumulative attrition percentage for each JobRole.  In addition visualizations are created reflecting the results in the table below
+
+1) Attrition seems to be heavily tied to 4 JobRoles within the company:
+    a) Sales Executive
+    b) Research Scientist
+    c) Laboratory Technician
+    d) Sales Representative
+
+2) These 4 roles account for 85% of the total attrition among employees
+3) Furthermore, these 4 roles have the highest Job specific Attrition rates out of all listed Jobroles (The one exception being human resources, which could be due to its small sample size)
+4) Based on the average job level there is correlation these are also lower position or entry level jobs, which may also tie into attrition motivations
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+#install.packages("kableExtra")
+library(kableExtra)
+
+ATR_comp <- left_join(
+
+CaseStudy2_data%>%group_by(JobRole)%>%summarize(count=n(),Avg_Job_Level=mean(JobLevel)),
+
+CaseStudy2_data%>%filter(Attrition=="Yes")%>%group_by(JobRole)%>%summarize(ATR_count=n()),
+by=c("JobRole"="JobRole"))%>%mutate('JobRole_ATR_%' = ATR_count/count)%>%arrange(desc(ATR_count))
+
+ATR_comp$'%_Of_Total_ATR' = ATR_comp$ATR_count/nrow(CaseStudy2_data%>%filter(Attrition=="Yes"))
+ATR_comp$Cumulative_ATR_count = cumsum(ATR_comp$ATR_count)
+ATR_comp$'Cumulative_ATR_%' = ATR_comp$Cumulative_ATR_count/nrow(CaseStudy2_data%>%filter(Attrition=="Yes"))
+
+as.data.frame(ATR_comp) %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c(" ", "JobRole Attrition Statistics" = 7))
+```
+
+
+```{r message=FALSE, warning=FALSE}
+
+
+ATR_comp$JobRole = factor(ATR_comp$JobRole,level = ATR_comp$JobRole[order((ATR_comp$ATR_count))])
+
+
+ATR_comp%>%ggplot(aes(x=JobRole,y=ATR_count,fill=JobRole))+
+  geom_col()+
+  theme(axis.text.x = element_text(angle = 45))+
+ scale_y_continuous(breaks = scales::pretty_breaks(n = 10))+ coord_flip()+ggtitle("Attrition Count by JobRole")
+
+
+ATR_comp$JobRole = factor(ATR_comp$JobRole,level = ATR_comp$JobRole[order((ATR_comp$ATR_count),decreasing = TRUE)])
+
+rbind(
+ATR_comp%>%mutate(Type='JobRole_ATR_%')%>%select(JobRole,Percent='JobRole_ATR_%',Type),
+ATR_comp%>%mutate(Type='%_Of_Total_ATR')%>%select(JobRole,Percent='%_Of_Total_ATR',Type),
+ATR_comp%>%mutate(Type='Cumulative_ATR_%')%>%select(JobRole,Percent='Cumulative_ATR_%',Type))%>%
+  ggplot(aes(x = JobRole,y=Percent,group=Type,color=Type)) +
+ 
+  geom_point()+geom_line()+
+  theme(axis.text.x = element_text(angle = 90))+ggtitle("Attrition % by JobRole")
+
+```
+
+### Monthly Income
+
+The following code examines the relationship between Attrition and Monthly Income.  To better standardize the data for a histogram and the Naive-Bayes classification model in the section to come, Income is rounded to the nearest $1000 value.
+
+1. Attrition is greatly skewed to employees with lower Monthly Income
+
+2. Incomes <= $5000 account for 73% of the total attrition among employees despite only being 58% of the total employee count
+
+3. Very high attrition level in Incomes rounded to 1K, 2K & 3K (54%,32%,20%) vs the attrition rate of employees making over 5K (10%)
+
+```{r message=FALSE, warning=FALSE}
+
+library(plyr)
+CaseStudy2_data$Income_Rounded = round_any(CaseStudy2_data$MonthlyIncome, 1000)
+CaseStudy2_data%>%
+  ggplot(aes(x=Income_Rounded,color=Attrition))+geom_histogram()+
+  scale_x_continuous(breaks = round(seq(0,20000, by = 1000),2000))+
+  theme(axis.text.x = element_text(angle = 90))+ggtitle("Attrition by Monthly Income (Rounded to nearest $1000)")
+
+
+
+detach("package:plyr", unload=TRUE) 
+library(tidyverse)
+ATR_income_comp <- left_join(
+
+CaseStudy2_data%>%group_by(Income_Rounded)%>%summarize(count=n()),
+
+CaseStudy2_data%>%filter(Attrition=="Yes")%>%group_by(Income_Rounded)%>%summarize(ATR_count=n()),
+by=c("Income_Rounded"="Income_Rounded"))%>%mutate('Income_ATR_%' = ATR_count/count)%>%arrange((Income_Rounded))
+
+ATR_income_comp$'%_Of_Total_ATR' = ATR_income_comp$ATR_count/nrow(CaseStudy2_data%>%filter(Attrition=="Yes"))
+ATR_income_comp$Cumulative_ATR_count = cumsum(ATR_income_comp$ATR_count)
+ATR_income_comp$'Cumulative_ATR_%' = ATR_income_comp$Cumulative_ATR_count/nrow(CaseStudy2_data%>%filter(Attrition=="Yes"))
+ATR_income_comp$'Cumulative_Employee_%' = cumsum(ATR_income_comp$count)/nrow(CaseStudy2_data)
+  
+  
+ 
+
+
+
+
+head_df <- ATR_income_comp%>%head(5)
+
+
+tail_df <- tail(ATR_income_comp,-5)
+tail_df[is.na(tail_df)] = 0
+
+tail_df2<- data.frame(
+Income_Rounded = c("Over 5000"),
+c(tail_df%>%summarize(count=sum(count))),
+c(tail_df%>%summarize(ATR_count = sum(ATR_count))),
+ c(tail_df%>%summarize( 'Income_ATR_%'= sum(ATR_count))/tail_df%>%summarize(count=sum(count))),
+tail_df%>%summarize('%_Of_Total_ATR' = sum(ATR_count))/nrow(CaseStudy2_data%>%filter(Attrition=="Yes")),
+Cumulative_ATR_count = nrow(CaseStudy2_data%>%filter(Attrition=="Yes")),
+'Cumulative_ATR_%' = 1,
+'Cumulative_Employee_%' = 1
+
+
+   
+)%>% 
+  rename(
+    'Income_ATR_%' = Income_ATR_.,
+   '%_Of_Total_ATR' = X._Of_Total_ATR,
+   'Cumulative_ATR_%'= Cumulative_ATR_.,
+   'Cumulative_Employee_%' =Cumulative_Employee_.
+    )
+
+head_df$Income_Rounded = as.character(head_df$Income_Rounded)
+union_all(head_df,tail_df2)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Monthly Income Attrition Statistics" = 8))
+
+```
+### OverTime
+
+The following code provides Analysis showing the large difference in attrition percentages between overtime and non-overtime employees.  In addition code is written to calculate the 2 sample test for equality of proportions to highlight the statistical significance of this gap.
+
+1. Attrition for Overtime workers is 3-fold that of Non-Overtime employees (31% vs 9%)
+
+2. Overtime workers account for 57% of all employee attrition but account for only 28% of the employee count
+
+3. 2 Sample test for equality of proportions confirms with statistical significance (p-value < .0001) that the attrition % of Overtime vs Non- Overtime employees are not equal (95% confidence interval [15.5% - 28.5%])
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(knitr)
+#install.packages("kableExtra")
+library(kableExtra)
+
+ATR_comp_OT <- left_join(
+
+CaseStudy2_data%>%group_by(OverTime)%>%summarize(count=n()),
+
+CaseStudy2_data%>%filter(Attrition=="Yes")%>%group_by(OverTime)%>%summarize(ATR_count=n()),
+by=c("OverTime"="OverTime"))%>%mutate('OverTime_ATR_%' = ATR_count/count)%>%arrange(desc(ATR_count))
+
+ATR_comp_OT$'%_Of_Total_ATR' = ATR_comp_OT$ATR_count/nrow(CaseStudy2_data%>%filter(Attrition=="Yes"))
+ATR_comp_OT$Cumulative_ATR_count = cumsum(ATR_comp_OT$ATR_count)
+ATR_comp_OT$'Cumulative_ATR_%' = ATR_comp_OT$Cumulative_ATR_count/nrow(CaseStudy2_data%>%filter(Attrition=="Yes"))
+
+
+as.data.frame(ATR_comp_OT) %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c( "OverTime Attrition Statistics" = 7))
+
+
+library(MASS)
+OT_data <- CaseStudy2_data%>%mutate(Overtime_CAT = ifelse(OverTime == "Yes","Overtime","Non-Overtime"), Attrition_CAT = ifelse(Attrition == "Yes","Attrition","Non-Attrition"))
+
+
+table(OT_data$Overtime_CAT, OT_data$Attrition_CAT)%>%
+  kbl()%>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c( "Inputs for Two-Proportions Z-Test " = 3))
+  
+  
+prop.test(x = c(80, 60), n = c(252, 618)) 
+detach("package:MASS", unload=TRUE)
+
+```
+
+
+
+
+
+# Attrition Classification via Naive-Bayes
+
+While there are some variables that show strong correlation to Attrition, the true correlation and assigning an attrition prediction to workers will involve many more variables and considerations. The data provided by the employer is a mix of both continuous and categorical variables.  As such using KNN and measuring euclidean distances will not be appropriate.
+
+The following code will run a Naive-Bayes Model (abbreviated as NB) to test the statistical evidence of correlation between variables.  The concept of NB is any employee will be categorized as either Attrition or Non-Attrition depending based on conditional probabilities of the included variables.  It works on Bayes theorem of probability to predict the class of data sets.  
+
+The variables tested with the Naive-Bayes Model include:
+    1) JobRole
+    2) JobLevel
+    3) JobSatisfaction   
+    4) JobInvolvement
+    5) YearsAtCompany
+    6) OverTime
+    7) StockOptionLevel
+    8) TotalWorkingYears
+    9) BusinessTravel
+    10) Age
+    11) MaritalStatus
+    12) EnvironmentSatisfaction
+    13) NumCompaniesWorked
+    14) Income_Rounded
+    15) DistanceFromHome
+    16) WorkLifeBalance
+    17) YearsWithCurrManager
+    18) YearsInCurrentRole
+
+    
+
+The NB will return 3 primary statistics:
+
+1. Accuracy: the number of all correct predictions divided by the total number of the dataset
+
+2. Sensitivity: the number of correct positive predictions divided by the total number of positives
+
+3. Specificity:  the number of correct negative predictions divided by the total number of negatives
+
+To maximize the accuracy of the NB model, 500 simulations on different 70/30 split test training sets will be conducted.  The NB model reveals accuracy, sensitivity and specificity levels around 79%,83% and 62% respectively.  
+
+```{r message=FALSE, warning=FALSE}
+library(e1071)
+library(class)
+library(caret)
+library(knitr)
+#install.packages("kableExtra")
+library(kableExtra)
+library(tidyverse)
+
+iterations_nb = 500
+masterAcc_nb = matrix(nrow = iterations_nb)
+masterSens_nb = matrix(nrow = iterations_nb)
+masterSpef_nb = matrix(nrow = iterations_nb)
+splitPerc = .7 #Training / Test split Percentage
+for(j in 1:iterations_nb)
+{
+  
+  trainIndices_nb = sample(1:dim(CaseStudy2_data)[1],round(splitPerc * dim(CaseStudy2_data)[1]))
+  train_nb = CaseStudy2_data[trainIndices_nb,]
+  test_nb = CaseStudy2_data[-trainIndices_nb,]
+  
+  model_nb = naiveBayes(train_nb%>%dplyr::select(JobRole,
+    JobLevel,
+    JobSatisfaction,
+    JobInvolvement,
+    YearsAtCompany,
+    OverTime,
+    StockOptionLevel,
+    TotalWorkingYears,
+    BusinessTravel,
+    Age,
+    MaritalStatus,
+    EnvironmentSatisfaction,
+    NumCompaniesWorked,
+    Income_Rounded,
+    DistanceFromHome,
+    WorkLifeBalance,
+    YearsWithCurrManager,
+    YearsInCurrentRole
+
+ ),as.factor(train_nb$Attrition),laplace = 1)
+  table(predict(model_nb,test_nb%>%
+  dplyr::select(
+    JobRole,
+    JobLevel,
+    JobSatisfaction,
+    JobInvolvement,
+    YearsAtCompany,
+    OverTime,
+    StockOptionLevel,
+    TotalWorkingYears,
+    BusinessTravel,
+    Age,
+    MaritalStatus,
+    EnvironmentSatisfaction,
+    NumCompaniesWorked,
+    Income_Rounded,
+    DistanceFromHome,
+    WorkLifeBalance,
+    YearsWithCurrManager,
+    YearsInCurrentRole
+         
+)),as.factor(test_nb$Attrition
+))
+  CM_nb = confusionMatrix(table(predict(model_nb,test_nb%>%
+dplyr::select(
+  
+    JobRole,
+    JobLevel,
+    JobSatisfaction,
+    JobInvolvement,
+    YearsAtCompany,
+    OverTime,
+    StockOptionLevel,
+    TotalWorkingYears,
+    BusinessTravel,
+    Age,
+    MaritalStatus,
+    EnvironmentSatisfaction,
+    NumCompaniesWorked,
+    Income_Rounded,
+    DistanceFromHome,
+    WorkLifeBalance,
+    YearsWithCurrManager,
+    YearsInCurrentRole
+       
+       )),as.factor(test_nb$Attrition)))
+  masterAcc_nb[j] = CM_nb$overall[1]
+  masterSens_nb[j] = CM_nb$byClass[1]
+  masterSpef_nb[j] = CM_nb$byClass[2]
+}
+MeanAcc_nb = colMeans(masterAcc_nb)
+MeanSens_nb = colMeans(masterSens_nb)
+MeanSpef_nb = colMeans(masterSpef_nb)
+
+nb_results <- data.frame(
+                          accuracy_avg = MeanAcc_nb,
+                          Sensitivity_avg = MeanSens_nb,
+                          Specificity_avg = MeanSpef_nb)#%>%gt()%>%tab_header(title = "Naive-Bayes (500 iterations)")
+
+
+
+
+
+
+
+data.frame( Attrition_Factors_Considered = names(train_nb%>%select(
+    JobRole,
+    JobLevel,
+    JobSatisfaction,
+    JobInvolvement,
+    YearsAtCompany,
+    OverTime,
+    StockOptionLevel,
+    TotalWorkingYears,
+    BusinessTravel,
+    Age,
+    MaritalStatus,
+    EnvironmentSatisfaction,
+    NumCompaniesWorked,
+    Income_Rounded,
+    DistanceFromHome,
+    WorkLifeBalance,
+    YearsWithCurrManager,
+    YearsInCurrentRole
+
+ )
+ 
+ ))%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c( "Inputs for Naive-Bayes Classification Model" = 1))
+
+
+
+
+
+
+
+
+nb_results %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c( "Naive-Bayes Cross-Validation (500 iterations of 70/30 Test&Train Sets)" = 3))
+
+
+as.data.frame(masterAcc_nb)%>%ggplot(aes(x=V1))+geom_histogram()+xlab("Accuracy")+ylab("Count")+ggtitle("Histogram of Accuracy for 500 CV-Tests")
+as.data.frame(masterSens_nb)%>%ggplot(aes(x=V1))+geom_histogram()+xlab("Sensitivity")+ylab("Count")+ggtitle("Histogram of Sensitivity for 500 CV-Tests")
+as.data.frame(masterSpef_nb)%>%ggplot(aes(x=V1))+geom_histogram()+xlab("Specificity")+ylab("Count")+ggtitle("Histogram of Specificity for 500 CV-Tests")
+
+```
+
+
+### Prediction of Attrition
+
+The following code uses the previously built and cross-validated Naive-Bayes classification model to make an Attrition prediction on the additional CompSet of 300 employees.  In addition the code provides summaries as to the results of the 3 previously identified primary factors of attrition.
+
+1. Naïve-Bayes Prediction Model on CompSet yields 20% expected attrition (vs. 16% from the original data set)
+
+2. High attrition counts and % in 4 identified JobRoles ( Research Scientist, Laboratory Technician, Sales Executive, Sales Representative)
+
+3. High attrition associated to employees making less than $5000 per month
+
+4. High attrition % in employees that work Overtime
+
+
+```{r message=FALSE, warning=FALSE}
+library(e1071)
+library(class)
+library(caret)
+library(knitr)
+#install.packages("kableExtra")
+library(kableExtra)
+
+library(plyr)
+
+CaseStudy2_CompSet_NoAtr$Income_Rounded = round_any(CaseStudy2_CompSet_NoAtr$MonthlyIncome, 1000)
+
+ detach("package:plyr", unload=TRUE)
+library(tidyverse)
+model_nb_predict = naiveBayes(CaseStudy2_data%>%select(
+    JobRole,
+    JobLevel,
+    JobSatisfaction,
+    JobInvolvement,
+    YearsAtCompany,
+    OverTime,
+    StockOptionLevel,
+    TotalWorkingYears,
+    BusinessTravel,
+    Age,
+    MaritalStatus,
+    EnvironmentSatisfaction,
+    NumCompaniesWorked,
+    Income_Rounded,
+    DistanceFromHome,
+    WorkLifeBalance,
+    YearsWithCurrManager,
+    YearsInCurrentRole
+
+ ),as.factor(CaseStudy2_data$Attrition),laplace = 1)
+
+
+ CompSet_ATR_Pred<- predict(model_nb,CaseStudy2_CompSet_NoAtr%>%
+  select(
+    JobRole,
+    JobLevel,
+    JobSatisfaction,
+    JobInvolvement,
+    YearsAtCompany,
+    OverTime,
+    StockOptionLevel,
+    TotalWorkingYears,
+    BusinessTravel,
+    Age,
+    MaritalStatus,
+    EnvironmentSatisfaction,
+    NumCompaniesWorked,
+    Income_Rounded,
+    DistanceFromHome,
+    WorkLifeBalance,
+    YearsWithCurrManager,
+    YearsInCurrentRole
+         
+))
+
+ 
+CaseStudy2_CompSet_NoAtr$ATR_Prediction = as.character(CompSet_ATR_Pred)
+
+
+
+
+
+Case2PredictionsZaiken <- CaseStudy2_CompSet_NoAtr%>%mutate(Attrition = ATR_Prediction)%>%select(ID,Attrition)
+
+
+
+
+data.frame(
+ Total_Employee_Count = nrow(CaseStudy2_CompSet_NoAtr),
+ Attrition_Count = nrow(CaseStudy2_CompSet_NoAtr%>%filter(ATR_Prediction=="Yes")),
+ Attrition_Percent = nrow(CaseStudy2_CompSet_NoAtr%>%filter(ATR_Prediction=="Yes"))/nrow(CaseStudy2_CompSet_NoAtr)) %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Predicted Employee Attrition on CompSet" = 3))
+
+
+
+
+
+
+
+
+CaseStudy2_CompSet_NoAtr_Jrole <- left_join(
+CaseStudy2_CompSet_NoAtr%>%group_by(JobRole)%>%summarize(count=n()),
+CaseStudy2_CompSet_NoAtr%>%filter(ATR_Prediction=="Yes")%>%group_by(JobRole)%>%summarize(ATR_count=n()),
+by=c("JobRole"="JobRole"))
+
+
+
+
+CaseStudy2_CompSet_NoAtr_Jrole_2 <- left_join(CaseStudy2_CompSet_NoAtr,CaseStudy2_CompSet_NoAtr_Jrole%>%arrange(desc(ATR_count))%>%select(JobRole,ATR_count),by=c("JobRole"="JobRole"))
+
+
+
+
+
+ggplot(CaseStudy2_CompSet_NoAtr_Jrole_2 %>%
+                group_by(JobRole,ATR_Prediction,ATR_count) %>%
+                summarize_at("EmployeeCount",sum,na.rm=T),
+              aes(x=reorder(JobRole, desc(ATR_count)),y=EmployeeCount,fill=ATR_Prediction)) +
+  geom_bar(stat="identity",na.rm=TRUE)+
+  theme(axis.text.x = element_text(angle = 90))+ggtitle("Attrition Prediction for CompSet by JobRole")+xlab("JobRole")
+
+
+
+
+CaseStudy2_CompSet_NoAtr%>%
+  ggplot(aes(x=Income_Rounded,color=ATR_Prediction))+geom_histogram()+
+  scale_x_continuous(breaks = round(seq(0,20000, by = 1000),2000))+
+  theme(axis.text.x = element_text(angle = 90))+ggtitle("Attrition Prediction for CompSet by Monthly Income (Rounded to nearest $1000)")
+
+
+
+data.frame(
+ OverTime = c("OverTime","Non-OverTime") ,
+'Pred_ATR_%' = c(nrow(CaseStudy2_CompSet_NoAtr%>%filter(ATR_Prediction=="Yes"&OverTime=="Yes"))/nrow(CaseStudy2_CompSet_NoAtr%>%filter(OverTime =="Yes")),nrow(CaseStudy2_CompSet_NoAtr%>%filter(ATR_Prediction=="Yes"&OverTime=="No"))/nrow(CaseStudy2_CompSet_NoAtr%>%filter(OverTime =="No"))) 
+)%>% 
+  rename(
+    'Predicted_ATR_Percent' = Pred_ATR_.)%>%ggplot(aes(x=OverTime,y=Predicted_ATR_Percent,fill=OverTime))+geom_col()+
+  ggtitle("Predicted Attrition % for Overtime Workers in CompSet")
+
+
+
+
+
+```
+
+
+
+# Job Specific Trends
+
+1. The following code provides Average Statistics  by JobRole of key employee wellness measures by the following variables:
+ a) Job Satisfaction
+ b) Work Life Balance
+ c) Relationship Satisfaction
+ d) Environment Satisfaction
+
+2. The code then does 2 sample two-tailed T-tests to determine the statistical significance of the highest & lowest rated job role from each wellness metric vs all other job roles
+
+3. Only Environment Satisfaction of Manufacturing Director was revealed to be statistically significant (p-value = .004), other than this once case, it is statistically inconclusive to apply or assume the employee wellness trends from this sample to a larger population of employees.
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+#install.packages("kableExtra")
+library(kableExtra)
+
+
+### Average Job Satisfaction statistics
+JobSatisfaction <- CaseStudy2_data%>%group_by(JobRole)%>%summarize(Avg_JobSatisfaction=mean(JobSatisfaction),Count=n())%>%arrange(desc(Avg_JobSatisfaction))
+
+
+JobSatisfaction <- (JobSatisfaction%>%mutate( Desc_Rank =
+rank(-Avg_JobSatisfaction, na.last = TRUE,
+     ties.method = c("first")) 
+, Asc_Rank =
+rank(Avg_JobSatisfaction, na.last = TRUE,
+     ties.method = c("first")) 
+))%>%mutate(JobRole_Desc = ifelse(Desc_Rank==1,JobRole,'All Other Roles'),
+          JobRole_Asc = ifelse(Asc_Rank==1,JobRole,'All Other Roles')
+          
+          )
+
+
+JobSatisfaction%>%select(JobRole,Avg_JobSatisfaction,Count)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Average Satisfaction by JobRole" = 3))
+
+
+JobSatisfaction2 <- left_join(
+CaseStudy2_data,
+JobSatisfaction%>%select(JobRole,JobRole_Asc,JobRole_Desc),
+by=c("JobRole"="JobRole"))
+
+
+
+JobSatisfaction2_high <- t.test(formula =  JobSatisfaction ~ JobRole_Desc,  # Formula
+       data = JobSatisfaction2)
+
+JobSatisfaction2_low <- t.test(formula =  JobSatisfaction ~ JobRole_Asc,  # Formula
+       data = JobSatisfaction2)
+
+
+union_all(
+JobSatisfaction%>%filter(Desc_Rank==1)%>%select(JobRole,Avg_JobSatisfaction,Count),
+
+((JobSatisfaction%>%filter(!Desc_Rank==1)%>%mutate(count_percent=Count/(sum(JobSatisfaction%>%filter(!Desc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_JobSatisfaction )%>%summarize(Count=sum(Count),Avg_JobSatisfaction=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_JobSatisfaction,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Highest Job Satisfaction Summary" = 3))
+
+
+
+union_all(
+JobSatisfaction%>%filter(Asc_Rank==1)%>%select(JobRole,Avg_JobSatisfaction,Count),
+
+((JobSatisfaction%>%filter(!Asc_Rank==1)%>%mutate(count_percent=Count/(sum(JobSatisfaction%>%filter(!Asc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_JobSatisfaction )%>%summarize(Count=sum(Count),Avg_JobSatisfaction=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_JobSatisfaction,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Lowest Job Satisfaction Summary" = 3))
+
+
+data.frame(
+T_Test_Group = c("Highest Job Satisfaction","Lowest Job Satisfaction"),
+T_Stat = c(JobSatisfaction2_high$statistic,JobSatisfaction2_low$statistic),
+P_Value = c(JobSatisfaction2_high$p.value[1],JobSatisfaction2_low$p.value[1]),
+'Confidence Interval low' = c(JobSatisfaction2_high$conf.int[1],JobSatisfaction2_low$conf.int[1]),  
+'Confidence Interval High' = c(JobSatisfaction2_high$conf.int[2],JobSatisfaction2_low$conf.int[2])  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("","T-Test Results 95% Confidence Level" = 4))
+
+
+
+
+
+### Average work life balance statistics
+WorkLifeBalance <- CaseStudy2_data%>%group_by(JobRole)%>%summarize(Avg_WorkLifeBalance=mean(WorkLifeBalance),Count=n())%>%arrange(desc(Avg_WorkLifeBalance))
+
+
+WorkLifeBalance <- (WorkLifeBalance%>%mutate( Desc_Rank =
+rank(-Avg_WorkLifeBalance, na.last = TRUE,
+     ties.method = c("first")) 
+, Asc_Rank =
+rank(Avg_WorkLifeBalance, na.last = TRUE,
+     ties.method = c("first")) 
+))%>%mutate(JobRole_Desc = ifelse(Desc_Rank==1,JobRole,'All Other Roles'),
+          JobRole_Asc = ifelse(Asc_Rank==1,JobRole,'All Other Roles')
+          
+          )
+
+
+WorkLifeBalance%>%select(JobRole,Avg_WorkLifeBalance,Count)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Average Work/Life Balance by JobRole" = 3))
+
+
+WorkLifeBalance2 <- left_join(
+CaseStudy2_data,
+WorkLifeBalance%>%select(JobRole,JobRole_Asc,JobRole_Desc),
+by=c("JobRole"="JobRole"))
+
+
+
+WorkLifeBalance2_high <- t.test(formula =  WorkLifeBalance ~ JobRole_Desc,  # Formula
+       data = WorkLifeBalance2)
+
+WorkLifeBalance2_low <- t.test(formula =  WorkLifeBalance ~ JobRole_Asc,  # Formula
+       data = WorkLifeBalance2)
+
+
+union_all(
+WorkLifeBalance%>%filter(Desc_Rank==1)%>%select(JobRole,Avg_WorkLifeBalance,Count),
+
+((WorkLifeBalance%>%filter(!Desc_Rank==1)%>%mutate(count_percent=Count/(sum(WorkLifeBalance%>%filter(!Desc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_WorkLifeBalance )%>%summarize(Count=sum(Count),Avg_WorkLifeBalance=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_WorkLifeBalance,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Highest Work/Life Balance Summary" = 3))
+
+
+
+union_all(
+WorkLifeBalance%>%filter(Asc_Rank==1)%>%select(JobRole,Avg_WorkLifeBalance,Count),
+
+((WorkLifeBalance%>%filter(!Asc_Rank==1)%>%mutate(count_percent=Count/(sum(WorkLifeBalance%>%filter(!Asc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_WorkLifeBalance )%>%summarize(Count=sum(Count),Avg_WorkLifeBalance=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_WorkLifeBalance,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Lowest Work/Life Balance Summary" = 3))
+
+
+data.frame(
+T_Test_Group = c("Highest Work/Life Satisfaction","Lowest Work/Life Satisfaction"),
+T_Stat = c(WorkLifeBalance2_high$statistic,WorkLifeBalance2_low$statistic),
+P_Value = c(WorkLifeBalance2_high$p.value[1],WorkLifeBalance2_low$p.value[1]),
+'Confidence Interval low' = c(WorkLifeBalance2_high$conf.int[1],WorkLifeBalance2_low$conf.int[1]),  
+'Confidence Interval High' = c(WorkLifeBalance2_high$conf.int[2],WorkLifeBalance2_low$conf.int[2])  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("","T-Test Results 95% Confidence Level" = 4))
+
+
+### Average Relationship Satisfaction statistics
+
+RelationshipSatisfaction <- CaseStudy2_data%>%group_by(JobRole)%>%summarize(Avg_RelationshipSatisfaction=mean(RelationshipSatisfaction),Count=n())%>%arrange(desc(Avg_RelationshipSatisfaction))
+
+
+RelationshipSatisfaction <- (RelationshipSatisfaction%>%mutate( Desc_Rank =
+rank(-Avg_RelationshipSatisfaction, na.last = TRUE,
+     ties.method = c("first")) 
+, Asc_Rank =
+rank(Avg_RelationshipSatisfaction, na.last = TRUE,
+     ties.method = c("first")) 
+))%>%mutate(JobRole_Desc = ifelse(Desc_Rank==1,JobRole,'All Other Roles'),
+          JobRole_Asc = ifelse(Asc_Rank==1,JobRole,'All Other Roles')
+          
+          )
+
+
+RelationshipSatisfaction%>%select(JobRole,Avg_RelationshipSatisfaction,Count)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Average Relationship Satisfaction by JobRole" = 3))
+
+
+RelationshipSatisfaction2 <- left_join(
+CaseStudy2_data,
+RelationshipSatisfaction%>%select(JobRole,JobRole_Asc,JobRole_Desc),
+by=c("JobRole"="JobRole"))
+
+
+
+RelationshipSatisfaction2_high <- t.test(formula =  RelationshipSatisfaction ~ JobRole_Desc,  # Formula
+       data = RelationshipSatisfaction2)
+
+RelationshipSatisfaction2_low <- t.test(formula =  RelationshipSatisfaction ~ JobRole_Asc,  # Formula
+       data = RelationshipSatisfaction2)
+
+
+union_all(
+RelationshipSatisfaction%>%filter(Desc_Rank==1)%>%select(JobRole,Avg_RelationshipSatisfaction,Count),
+
+((RelationshipSatisfaction%>%filter(!Desc_Rank==1)%>%mutate(count_percent=Count/(sum(RelationshipSatisfaction%>%filter(!Desc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_RelationshipSatisfaction )%>%summarize(Count=sum(Count),Avg_RelationshipSatisfaction=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_RelationshipSatisfaction,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Highest Relationship Satisfaction Summary" = 3))
+
+
+
+union_all(
+RelationshipSatisfaction%>%filter(Asc_Rank==1)%>%select(JobRole,Avg_RelationshipSatisfaction,Count),
+
+((RelationshipSatisfaction%>%filter(!Asc_Rank==1)%>%mutate(count_percent=Count/(sum(RelationshipSatisfaction%>%filter(!Asc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_RelationshipSatisfaction )%>%summarize(Count=sum(Count),Avg_RelationshipSatisfaction=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_RelationshipSatisfaction,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Lowest Relationship Satisfaction Summary" = 3))
+
+
+data.frame(
+T_Test_Group = c("Highest Relationship Satisfaction","Lowest Relationship Satisfaction"),
+T_Stat = c(RelationshipSatisfaction2_high$statistic,RelationshipSatisfaction2_low$statistic),
+P_Value = c(RelationshipSatisfaction2_high$p.value[1],RelationshipSatisfaction2_low$p.value[1]),
+'Confidence Interval low' = c(RelationshipSatisfaction2_high$conf.int[1],RelationshipSatisfaction2_low$conf.int[1]),  
+'Confidence Interval High' = c(RelationshipSatisfaction2_high$conf.int[2],RelationshipSatisfaction2_low$conf.int[2])  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("","T-Test Results 95% Confidence Level" = 4))
+
+
+### Average Environmental Satisfaction statistics
+  
+
+EnvironmentSatisfaction <- CaseStudy2_data%>%group_by(JobRole)%>%summarize(Avg_EnvironmentSatisfaction=mean(EnvironmentSatisfaction),Count=n())%>%arrange(desc(Avg_EnvironmentSatisfaction))
+
+
+EnvironmentSatisfaction <- (EnvironmentSatisfaction%>%mutate( Desc_Rank =
+rank(-Avg_EnvironmentSatisfaction, na.last = TRUE,
+     ties.method = c("first")) 
+, Asc_Rank =
+rank(Avg_EnvironmentSatisfaction, na.last = TRUE,
+     ties.method = c("first")) 
+))%>%mutate(JobRole_Desc = ifelse(Desc_Rank==1,JobRole,'All Other Roles'),
+          JobRole_Asc = ifelse(Asc_Rank==1,JobRole,'All Other Roles')
+          
+          )
+
+
+EnvironmentSatisfaction%>%select(JobRole,Avg_EnvironmentSatisfaction,Count)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Average Environment Satisfaction by JobRole" = 3))
+
+
+EnvironmentSatisfaction2 <- left_join(
+CaseStudy2_data,
+EnvironmentSatisfaction%>%select(JobRole,JobRole_Asc,JobRole_Desc),
+by=c("JobRole"="JobRole"))
+
+
+
+EnvironmentSatisfaction2_high <- t.test(formula =  EnvironmentSatisfaction ~ JobRole_Desc,  # Formula
+       data = EnvironmentSatisfaction2)
+
+EnvironmentSatisfaction2_low <- t.test(formula =  EnvironmentSatisfaction ~ JobRole_Asc,  # Formula
+       data = EnvironmentSatisfaction2)
+
+
+union_all(
+EnvironmentSatisfaction%>%filter(Desc_Rank==1)%>%select(JobRole,Avg_EnvironmentSatisfaction,Count),
+
+((EnvironmentSatisfaction%>%filter(!Desc_Rank==1)%>%mutate(count_percent=Count/(sum(EnvironmentSatisfaction%>%filter(!Desc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_EnvironmentSatisfaction )%>%summarize(Count=sum(Count),Avg_EnvironmentSatisfaction=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_EnvironmentSatisfaction,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Highest Environment Satisfaction Summary" = 3))
+
+
+
+union_all(
+EnvironmentSatisfaction%>%filter(Asc_Rank==1)%>%select(JobRole,Avg_EnvironmentSatisfaction,Count),
+
+((EnvironmentSatisfaction%>%filter(!Asc_Rank==1)%>%mutate(count_percent=Count/(sum(EnvironmentSatisfaction%>%filter(!Asc_Rank==1)%>%summarize(Total_Count = sum(Count))%>%select(Total_Count)))  ))%>%
+  mutate(WA = count_percent*Avg_EnvironmentSatisfaction )%>%summarize(Count=sum(Count),Avg_EnvironmentSatisfaction=sum(WA)))%>%mutate(JobRole="All Other Roles")%>%select(JobRole,Avg_EnvironmentSatisfaction,Count)
+  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Lowest Environment Satisfaction Summary" = 3))
+
+
+data.frame(
+T_Test_Group = c("Highest Environment Satisfaction","Lowest Environment Satisfaction"),
+T_Stat = c(EnvironmentSatisfaction2_high$statistic,EnvironmentSatisfaction2_low$statistic),
+P_Value = c(EnvironmentSatisfaction2_high$p.value[1],EnvironmentSatisfaction2_low$p.value[1]),
+'Confidence Interval low' = c(EnvironmentSatisfaction2_high$conf.int[1],EnvironmentSatisfaction2_low$conf.int[1]),  
+'Confidence Interval High' = c(EnvironmentSatisfaction2_high$conf.int[2],EnvironmentSatisfaction2_low$conf.int[2])  
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("","T-Test Results 95% Confidence Level" = 4))
+
+
+
+data.frame(
+Employee_Wellness_Metric = c("Job Satisfaction", "Work/Life Balance", "Relationship Satisfaction","Environmental Satisfaction"), 
+Highest_Rated_Role = c("Healthcare Representative","Human Resources","Human Resources","Manufacturing Director"),
+Highest_Rated_Avg = c(2.828947,2.962963,2.962963,3.000000),
+Lowest_Rated_Role = c("Research Director","Healthcare Representative","Research Director","Research Director"),
+Lowest_Rated_Avg = c(2.490196,2.671053,2.588235,2.450980)
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Employee Wellness Summary" = 5))
+
+
+data.frame(
+Employee_Wellness_Metric = c("Job Satisfaction", "Work/Life Balance", "Relationship Satisfaction","Environmental Satisfaction"), 
+Highest_Rated_Role = c("Healthcare Representative","Human Resources","Human Resources","Manufacturing Director"),
+Highest_Rated_Avg = c(2.828947,2.962963,2.962963,3.000000),
+Statistically_Significant = c("No","No","No","Yes"),
+Lowest_Rated_Role = c("Research Director","Healthcare Representative","Research Director","Research Director"),
+Lowest_Rated_Avg = c(2.490196,2.671053,2.588235,2.450980),
+Statistically_Significant = c("No","No","No","No")
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Employee Wellness Summary" = 7))
+
+```
+
+
+# Monthly Income Regression Model
+
+Similar to Attrition, there are many variables that contribute to determining Monthly Income, there are at least 27 different continuous variables that could play a part in Monthly Income determination.
+
+1. The following code used step-wise selection process was done to ensure only the most statistically significant coefficients that yielded the highest Adjusted R squared and lowest root mean squared error were included in the model.
+
+2. The step-wise selection method yields 8 coefficients that will be used to predict monthly income.  When running the model on the whole data set the Adjusted R^2 and RMSE are .91 and 1362.277 respectively
+
+3. The model shows Joblevel, TotalWorkingYears and YearswithCurrentManager as 3 of the most influential variables.
+
+4. A data frame is created showing the Pearson Coefficient for each of these variables.
+
+```{r message=FALSE, warning=FALSE}
+library(e1071)
+library(class)
+library(caret)
+#install.packages("Metrics")
+library(Metrics)
+library(tidyverse)
+library(knitr)
+#install.packages("kableExtra")
+library(kableExtra)
+
+
+
+
+employee_data <- (CaseStudy2_data[, sapply(CaseStudy2_data, class) != "character"])
+
+employee_data <- employee_data[,!names(employee_data) %in% c("StandardHours", "Income_Rounded")]
+
+
+
+
+
+
+#Model1_fit = lm(MonthlyIncome ~ JobLevel+Age+YearsAtCompany, data = CaseStudy2_data)
+
+#summary(Model1_fit)
+#Model1_Preds = predict(Model1_fit, newdata = CaseStudy2_data)
+
+
+#rmse(CaseStudy2_data$MonthlyIncome, Model1_Preds)
+
+
+
+library(MASS)
+# Fit the full model 
+full.model <- lm(MonthlyIncome ~., data = employee_data)
+#summary(full.model)
+# Stepwise regression model
+step.model <- stepAIC(full.model, direction = "both", 
+                      trace = FALSE)
+employee_data_summary<- summary(step.model)
+
+detach("package:MASS", unload=TRUE)
+
+
+
+employee_data_df <- as.data.frame(employee_data_summary$coefficients)
+Model1_Preds = predict(step.model, newdata = CaseStudy2_data)
+
+
+employee_data_df%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Step-Wise Coefficients of Linear Regression Model for Monthly Income" = 5))
+
+
+
+data.frame(
+Adj_R_Squared = c(employee_data_summary$adj.r.squared),
+RMSE = c(rmse(CaseStudy2_data$MonthlyIncome, Model1_Preds)))%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Step-Wise Model Accuracy" = 2))
+
+
+
+CaseStudy2_data%>%ggplot(aes(x=JobLevel,y=MonthlyIncome))+geom_point(position = "jitter")+geom_smooth(method="lm")+ggtitle("JobLevel vs MonthlyIncome")
+
+CaseStudy2_data%>%ggplot(aes(x=TotalWorkingYears,y=MonthlyIncome))+geom_point(position = "jitter")+geom_smooth(method="lm")+ggtitle("TotalWorkingYears vs MonthlyIncome")
+
+CaseStudy2_data%>%ggplot(aes(x=YearsWithCurrManager,y=MonthlyIncome))+geom_point(position = "jitter")+geom_smooth(method="lm")+ggtitle("YearsWithCurrManager vs MonthlyIncome")
+
+
+
+data.frame(
+Variable = c("JobLevel","TotalWorkingYears","YearsWithCurrManager"),
+Pearson_Coefficient = c( 
+cor(CaseStudy2_data$JobLevel, CaseStudy2_data$MonthlyIncome, method = c("pearson")),
+cor(CaseStudy2_data$TotalWorkingYears, CaseStudy2_data$MonthlyIncome, method = c("pearson")),
+cor(CaseStudy2_data$YearsWithCurrManager, CaseStudy2_data$MonthlyIncome, method = c("pearson"))))%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Linear Fit Assessment" = 2))
+
+
+```
+
+
+
+
+
+
+
+# Monthly Income Regression Model (Cross-Validation)
+
+The code below will test the accuracy of the coefficient selection from the step-wise model.
+
+1. 500 iterations of 70/30 test & training sets are created to test the consistency of the regression model
+  a) In each test set the adjusted R-squared and RMSE of the model are stored
+  b) In each training set the adjusted R-squared and RMSE of the model are stored
+  
+2. A data frame is created showing the average of the 500 tests for adjusted R-squared and RMSE for test and training sets.  The values are very similar to that of the original step-wise model validating its accuracy
+
+3. Histograms show the normal distribution and consistency of measurements across the 500 iterations pf test/train  for adj. R^2 and RMSE
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+
+library(e1071)
+library(class)
+library(caret)
+#install.packages("Metrics")
+library(Metrics)
+library(tidyverse)
+library(knitr)
+#install.packages("kableExtra")
+library(kableExtra)
+
+
+
+
+
+
+iterations_RM = 500
+train_AdjR_RM = matrix(nrow = iterations_nb)
+train_RMSE_RM = matrix(nrow = iterations_nb)
+test_AdjR_RM = matrix(nrow = iterations_nb)
+test_RMSE_RM = matrix(nrow = iterations_nb)
+splitPerc = .7 #Training / Test split Percentage
+for(j in 1:iterations_nb)
+{
+  
+  trainIndices_RM = sample(1:dim(CaseStudy2_data)[1],round(splitPerc * dim(CaseStudy2_data)[1]))
+  train_RM = CaseStudy2_data[trainIndices_RM,]
+  test_RM = CaseStudy2_data[-trainIndices_RM,]
+  
+  library(MASS)
+  
+train_RM_model <- lm(MonthlyIncome ~ DistanceFromHome + EnvironmentSatisfaction + JobInvolvement + JobLevel + PercentSalaryHike + PerformanceRating + TotalWorkingYears + YearsWithCurrManager , data = train_RM)  
+
+detach("package:MASS", unload=TRUE)  
+
+
+train_RM_model_summary <- summary(train_RM_model)
+
+ train_RM_Preds = predict(train_RM_model, newdata = train_RM) 
+ test_RM_Preds = predict(train_RM_model, newdata = test_RM) 
+
+
+  train_AdjR_RM[j] = train_RM_model_summary$adj.r.squared
+  train_RMSE_RM[j] = rmse(train_RM$MonthlyIncome, train_RM_Preds)
+
+test_RM_residuals <-test_RM$MonthlyIncome-test_RM_Preds
+  
+ n_test=length(test_RM$MonthlyIncome)
+k_test=length(train_RM_model$coefficients)-1 #Subtract one to ignore intercept
+SSE_test=sum(test_RM_residuals**2)
+SSyy_test=sum((test_RM$MonthlyIncome-mean(test_RM$MonthlyIncome))**2)
+test_AdjR <- 1-(SSE_test/SSyy_test)*(n_test-1)/(n_test-(k_test+1))
+ 
+test_AdjR_RM[j] = test_AdjR
+test_RMSE_RM[j] = rmse(test_RM$MonthlyIncome, test_RM_Preds)
+ 
+}
+
+
+Mean_train_AdjR_RM = colMeans(train_AdjR_RM)
+Mean_train_RMSE_RM = colMeans(train_RMSE_RM)
+Mean_test_AdjR_RM = colMeans(test_AdjR_RM)
+Mean_test_RMSE_RM = colMeans(test_RMSE_RM)
+ 
+ 
+ RM_results <- data.frame(
+   Measurenment = c("Train_Set_Adj_Rsquared_Avg","Train_Set_RMSE_Avg","Test_Set_Adj_Rsquared_Avg","Test_Set_RMSE_Avg"),
+   Value = c(Mean_train_AdjR_RM,Mean_train_RMSE_RM,Mean_test_AdjR_RM,Mean_test_RMSE_RM ))
+ 
+ 
+ RM_results%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("500 iterations of 70/30 Train & Test split Cross-Validation" = 2))
+
+ 
+
+as.data.frame(train_AdjR_RM)%>%ggplot(aes(x=V1))+geom_histogram()+xlab("Adjusted R squared")+ylab("Count")+ggtitle("Histogram of Training Set Adjusted R squared for 500 CV-Tests")
+as.data.frame(train_RMSE_RM)%>%ggplot(aes(x=V1))+geom_histogram()+xlab("RMSE")+ylab("Count")+ggtitle("Histogram of Training Set RMSE for 500 CV-Tests")
+as.data.frame(test_AdjR_RM)%>%ggplot(aes(x=V1))+geom_histogram()+xlab("Adjusted R squared")+ylab("Count")+ggtitle("Histogram of Test Set Adjusted R squared for 500 CV-Tests")
+as.data.frame(test_RMSE_RM)%>%ggplot(aes(x=V1))+geom_histogram()+xlab("RMSE")+ylab("Count")+ggtitle("Histogram of Test Set RMSE for 500 CV-Tests")
+
+
+```
+
+
+
+
+# Monthly Income Regression Model (Prediction)
+
+The code below will run the cross-validated step-wise regression model for Monthly Income on the provided Compset.
+
+1. Scatter plots are created to show the consistency with the linear trends identified with JobLevel, TotalWorkingYears and YearsWithCurrManager from the original Dataset.
+
+2. In addition a data frame is created showing the summary of Pearson Linear coefficients from the original Dataset with that of the Compset with predicted Monthly Income
+
+3. The data summarized here provides confidence that Monthly Income was estimated accurately and is following the same trends as identified in the original data.
+
+```{r message=FALSE, warning=FALSE}
+
+
+
+CaseStudy2_CompSet_NoSal_Preds = predict(step.model, newdata = CaseStudy2_CompSet_NoSal) 
+
+CaseStudy2_CompSet_NoSal$Predicted_Monthly_Income = CaseStudy2_CompSet_NoSal_Preds
+
+
+CaseStudy2_CompSet_NoSal%>%ggplot(aes(x=JobLevel,y=Predicted_Monthly_Income))+geom_point(position = "jitter")+geom_smooth(method="lm")+ggtitle("CompSet JobLevel vs Predicted MonthlyIncome")
+
+CaseStudy2_CompSet_NoSal%>%ggplot(aes(x=TotalWorkingYears,y=Predicted_Monthly_Income))+geom_point(position = "jitter")+geom_smooth(method="lm")+ggtitle("CompSet TotalWorkingYears vs Predicted MonthlyIncome")
+
+CaseStudy2_CompSet_NoSal%>%ggplot(aes(x=YearsWithCurrManager,y=Predicted_Monthly_Income))+geom_point(position = "jitter")+geom_smooth(method="lm")+ggtitle("CompSet YearsWithCurrManager vs Predicted MonthlyIncome")
+
+
+
+
+data.frame(
+Variable = c("JobLevel","TotalWorkingYears","YearsWithCurrManager"),
+Original_Data_Pearson_Coefficient = c( 
+cor(CaseStudy2_data$JobLevel, CaseStudy2_data$MonthlyIncome, method = c("pearson")),
+cor(CaseStudy2_data$TotalWorkingYears, CaseStudy2_data$MonthlyIncome, method = c("pearson")),
+cor(CaseStudy2_data$YearsWithCurrManager, CaseStudy2_data$MonthlyIncome, method = c("pearson"))),
+CompSet_Predicted_Pearson_Coefficient = c( 
+cor(CaseStudy2_CompSet_NoSal$JobLevel, CaseStudy2_CompSet_NoSal$Predicted_Monthly_Income, method = c("pearson")),
+cor(CaseStudy2_CompSet_NoSal$TotalWorkingYears, CaseStudy2_CompSet_NoSal$Predicted_Monthly_Income, method = c("pearson")),
+cor(CaseStudy2_CompSet_NoSal$YearsWithCurrManager, CaseStudy2_CompSet_NoSal$Predicted_Monthly_Income, method = c("pearson")))
+
+
+)%>%
+  kbl() %>%
+  kable_classic_2(full_width = F)%>%
+  add_header_above(c("Linear Fit Assessment" = 3))
+
+
+Case2PredictionsZaikenSalary <- CaseStudy2_CompSet_NoSal%>%mutate(MonthlyIncome = Predicted_Monthly_Income)%>%select(ID,MonthlyIncome)
+
+
+```
+
+
+
+# Export of CompSet CSV files
+
+The following code will export CSV file formats for the predicted Attrition and Estimated Monthly Income for the 2 CompSets.
+
+```{r message=FALSE, warning=FALSE}
+
+#write.csv(Case2PredictionsZaiken,"C:\\Users\\zzaik\\OneDrive\\SMU work\\Doing Data Science\\Case Study 2\\Case2PredictionsZaiken Attrition.csv", row.names = FALSE)
+
+#write.csv(Case2PredictionsZaikenSalary,"C:\\Users\\zzaik\\OneDrive\\SMU work\\Doing Data Science\\Case Study 2\\Case2PredictionsZaiken Salary.csv", row.names = FALSE)
+
+
+```
+
+
+
+
+
