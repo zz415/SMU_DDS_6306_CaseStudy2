@@ -1,5 +1,15 @@
 # SMU_DDS_6306_CaseStudy2
 
+The following data analysis and files were created exclusively for the Frito/Lay executive team.
+
+RMD File: 
+
+Knit HTML File: 
+
+PowerPoint Presentation: 
+
+Youtube Video: 
+
 The analysis and code are based off of the  employee information provided by Frito/Lay. The findings from the DDS Analytics Company, were prepared and are represented by data scientist Zach Zaiken.  In the Code and presentation attached , DDS Analytics will be providing data inferences and key takeaways for each of the Frito/Lay Team's questions and inquries. The presentation is divided up into the sections below.
 
 1. Import Data
