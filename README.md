@@ -2,7 +2,7 @@
 
 The following data analysis and files were created exclusively for the Frito/Lay executive team.
 
-RMD File: 
+RMD File: https://github.com/zz415/SMU_DDS_6306_CaseStudy2/blob/main/11.21.20_CaseStudy2.rmd
 
 Knit HTML File: 
 
