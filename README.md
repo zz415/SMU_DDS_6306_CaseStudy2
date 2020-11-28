@@ -6,7 +6,7 @@ RMD File: https://github.com/zz415/SMU_DDS_6306_CaseStudy2/blob/main/11.21.20_Ca
 
 Knit HTML File: https://zz415.github.io/SMU_DDS_6306_CaseStudy2/11.21.20_CaseStudy2.html
 
-PowerPoint Presentation: 
+PowerPoint Presentation: https://github.com/zz415/SMU_DDS_6306_CaseStudy2/blob/main/11.22.20_CaseStudy2_FritoLay_EmployeeAnalysis.pptx
 
 Youtube Video: 
 
