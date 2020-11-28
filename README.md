@@ -12,7 +12,7 @@ Youtube Video:
 
 Attrition Prediction: https://github.com/zz415/SMU_DDS_6306_CaseStudy2/blob/main/Case2PredictionsZaiken%20Attrition.csv
 
-Monthly Income Prediction: 
+Monthly Income Prediction: https://github.com/zz415/SMU_DDS_6306_CaseStudy2/blob/main/Case2PredictionsZaiken%20Salary.csv
 
 The analysis and code are based off of the  employee information provided by Frito/Lay. The findings from the DDS Analytics Company, were prepared and are represented by data scientist Zach Zaiken.  In the Code and presentation attached , DDS Analytics will be providing data inferences and key takeaways for each of the Frito/Lay Team's questions and inquries. The presentation is divided up into the sections below.
 
