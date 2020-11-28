@@ -4,9 +4,9 @@ The analysis and code are based off of the  employee information provided by Fri
 
 1. Import Data
 2. Factors Of Attrition
-  a) JobRole
-  b) Monthly Income
-  c) Over Time
+    a) JobRole
+    b) Monthly Income
+    c) Over Time
 3. Attrition Classification via Naive-Bayes
 4. Prediction of Attrition
 5. Job Specific Trends
